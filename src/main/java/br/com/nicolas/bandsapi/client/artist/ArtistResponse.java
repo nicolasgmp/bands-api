@@ -10,9 +10,10 @@ public record ArtistResponse(
         String id,
         String name,
         Followers followers,
+        Integer popularity,
         List<String> genres) {
 
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Followers(String href, int total) {
+    public record Followers(int total) {
     }
 }
