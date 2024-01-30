@@ -1,4 +1,4 @@
-package br.com.nicolas.bandsapi.model;
+package br.com.nicolas.bandsapi.models;
 
 import java.util.ArrayList;
 import java.util.List;

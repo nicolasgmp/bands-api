@@ -1,4 +1,4 @@
-package br.com.nicolas.bandsapi.model;
+package br.com.nicolas.bandsapi.models;
 
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;

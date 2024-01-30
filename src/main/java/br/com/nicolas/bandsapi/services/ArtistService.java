@@ -1,17 +1,20 @@
 package br.com.nicolas.bandsapi.services;
 
-import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.stereotype.Service;
 
-import br.com.nicolas.bandsapi.client.artist.ArtistAlbumsResponse;
 import br.com.nicolas.bandsapi.client.artist.ArtistClient;
-import br.com.nicolas.bandsapi.client.artist.ArtistResponse;
-import br.com.nicolas.bandsapi.client.artist.TopTracksResponse;
-import br.com.nicolas.bandsapi.model.Album;
-import br.com.nicolas.bandsapi.model.Artist;
-import br.com.nicolas.bandsapi.model.Track;
+import br.com.nicolas.bandsapi.client.artist.dto.ArtistAlbumsResponse;
+import br.com.nicolas.bandsapi.client.artist.dto.ArtistResponse;
+import br.com.nicolas.bandsapi.client.artist.dto.ArtistSpotify;
+import br.com.nicolas.bandsapi.client.artist.dto.TopTracksResponse;
+import br.com.nicolas.bandsapi.maps.ArtistMapper;
+import br.com.nicolas.bandsapi.models.Album;
+import br.com.nicolas.bandsapi.models.Artist;
+import br.com.nicolas.bandsapi.models.Track;
 import br.com.nicolas.bandsapi.repositories.ArtistRepository;
 import jakarta.transaction.Transactional;
 
@@ -31,7 +34,11 @@ public class ArtistService {
 
     public ArtistResponse findArtistSpotify(String id) {
         String token = loginService.loginSpotify();
-        return artistClient.getArtist(BEARER + token, id);
+        ArtistSpotify artistSpotify = artistClient.getArtist(BEARER + token, id);
+        List<String> artistAlbumsName = getArtistAlbumsName(id, token);
+        List<String> artistTopTracks = getArtistTopTracks(id, "BR", token);
+
+        return ArtistMapper.fromSpotifyToResponse(artistSpotify, artistAlbumsName, artistTopTracks);
     }
 
     public Artist findArtistById(String id) {
@@ -43,41 +50,45 @@ public class ArtistService {
     }
 
     @Transactional
-    public Artist saveArtist(String id, String market) {
+    public ArtistResponse saveArtist(String id, String market) {
         String token = loginService.loginSpotify();
 
-        ArtistResponse artistResponse = artistClient.getArtist(BEARER + token, id);
+        ArtistSpotify artistResponse = artistClient.getArtist(BEARER + token, id);
+        List<String> artistAlbumsName = getArtistAlbumsName(id, token);
+        List<String> artistTopTracks = getArtistTopTracks(id, market, token);
 
-        Artist newArtist = new Artist(artistResponse.id(), artistResponse.name(), artistResponse.followers().total(),
-                artistResponse.popularity(), artistResponse.genres(), new ArrayList<>(), new ArrayList<>(),
-                Collections.emptyList());
+        Artist newArtist = new Artist(
+                artistResponse.id(), artistResponse.name(), artistResponse.followers().total(),
+                artistResponse.popularity(), artistResponse.genres(), artistAlbumsName,
+                artistTopTracks, Collections.emptyList());
 
-        saveArtistAlbumsName(id, token, newArtist);
-        saveArtistTopTracks(id, market, token, newArtist);
+        artistRepository.save(newArtist);
 
-        return artistRepository.save(newArtist);
+        return ArtistMapper.fromArtistToResponse(newArtist);
     }
 
     @Transactional
-    public Artist addNewAlbum(String id, Album album) {
+    public ArtistResponse addNewAlbum(String id, Album album) {
         Artist artist = findArtistById(id);
         artist.getAlbums().add(album);
-        return artistRepository.save(artist);
+        artistRepository.save(artist);
+
+        return ArtistMapper.fromArtistToResponse(artist);
     }
 
-    public void saveArtistAlbumsName(String id, String token, Artist artist) {
+    public List<String> getArtistAlbumsName(String id, String token) {
         ArtistAlbumsResponse artistAlbumsResponse = artistClient.getArtistAlbums(BEARER + token, id);
 
-        artistAlbumsResponse.items().stream()
+        return artistAlbumsResponse.items().stream()
                 .map(Album::getName)
-                .forEach(artist.getAlbumsName()::add);
+                .collect(Collectors.toList());
     }
 
-    public void saveArtistTopTracks(String id, String market, String token, Artist artist) {
+    public List<String> getArtistTopTracks(String id, String market, String token) {
         TopTracksResponse topTracksResponse = artistClient.getArtistTopTracks(BEARER + token, id, market);
 
-        topTracksResponse.tracks().stream()
+        return topTracksResponse.tracks().stream()
                 .map(Track::getName)
-                .forEach(artist.getTopTracks()::add);
+                .collect(Collectors.toList());
     }
 }

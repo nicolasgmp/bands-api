@@ -6,10 +6,13 @@ import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 import br.com.nicolas.bandsapi.client.album.AlbumClient;
-import br.com.nicolas.bandsapi.client.album.AlbumResponse;
-import br.com.nicolas.bandsapi.model.Album;
-import br.com.nicolas.bandsapi.model.Artist;
-import br.com.nicolas.bandsapi.model.Track;
+import br.com.nicolas.bandsapi.client.album.dto.AlbumResponse;
+import br.com.nicolas.bandsapi.client.album.dto.AlbumSpotify;
+import br.com.nicolas.bandsapi.maps.AlbumMapper;
+import br.com.nicolas.bandsapi.maps.ArtistMapper;
+import br.com.nicolas.bandsapi.models.Album;
+import br.com.nicolas.bandsapi.models.Artist;
+import br.com.nicolas.bandsapi.models.Track;
 import br.com.nicolas.bandsapi.repositories.AlbumRepository;
 import jakarta.transaction.Transactional;
 
@@ -30,16 +33,30 @@ public class AlbumService {
         this.artistService = artistService;
     }
 
-    @Transactional
-    public Album saveAlbum(String id) {
+    public AlbumResponse findAlbumSpotify(String id) {
         String token = loginService.loginSpotify();
-        AlbumResponse albumResponse = albumClient.getAlbum(BEARER + token, id);
+
+        return AlbumMapper.fromSpotifyToResponse(albumClient.getAlbum(BEARER + token, id));
+    }
+
+    public Album findAlbumById(String id) {
+        if (id != null) {
+            return albumRepository.findById(id).orElseThrow(() -> new RuntimeException("Album not found!"));
+        }
+
+        return null;
+    }
+
+    @Transactional
+    public AlbumResponse saveAlbum(String id) {
+        String token = loginService.loginSpotify();
+        AlbumSpotify albumResponse = albumClient.getAlbum(BEARER + token, id);
 
         String artistId = albumResponse.artists().get(0).getId();
         Artist artist = artistService.findArtistById(artistId);
 
         if (artist == null) {
-            artist = artistService.saveArtist(artistId, "BR");
+            artist = ArtistMapper.fromResponseToArtist(artistService.saveArtist(artistId, "BR"), artistId);
         }
 
         List<String> albumTracksName = albumResponse.tracks().items().stream()
@@ -53,6 +70,6 @@ public class AlbumService {
         albumRepository.save(newAlbum);
         artistService.addNewAlbum(artist.getId(), newAlbum);
 
-        return newAlbum;
+        return AlbumMapper.fromAlbumToResponse(newAlbum);
     }
 }
