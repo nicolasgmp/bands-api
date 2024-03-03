@@ -14,11 +14,16 @@ import br.com.nicolas.bandsapi.models.Album;
 import br.com.nicolas.bandsapi.models.Artist;
 import br.com.nicolas.bandsapi.models.Track;
 import br.com.nicolas.bandsapi.repositories.AlbumRepository;
+import br.com.nicolas.bandsapi.services.exceptions.AlbumNotFoundException;
+import br.com.nicolas.bandsapi.services.exceptions.BadFormatIdException;
+import br.com.nicolas.bandsapi.services.exceptions.NullIdException;
+import feign.FeignException;
 import jakarta.transaction.Transactional;
 
 @Service
 public class AlbumService {
 
+    private static final String ALBUM_NOT_FOUND = "Album not found!";
     private static final String BEARER = "Bearer ";
     private AlbumRepository albumRepository;
     private AlbumClient albumClient;
@@ -34,42 +39,64 @@ public class AlbumService {
     }
 
     public AlbumResponse findAlbumSpotify(String id) {
-        String token = loginService.loginSpotify();
+        checkIdNullOrEmpty(id);
 
-        return AlbumMapper.fromSpotifyToResponse(albumClient.getAlbum(BEARER + token, id));
+        try {
+            String token = loginService.loginSpotify();
+            return AlbumMapper.fromSpotifyToResponse(albumClient.getAlbum(BEARER + token, id).get());
+        } catch (FeignException ex) {
+            throw new AlbumNotFoundException(ALBUM_NOT_FOUND);
+        }
     }
 
     public Album findAlbumById(String id) {
-        if (id != null) {
-            return albumRepository.findById(id).orElseThrow(() -> new RuntimeException("Album not found!"));
-        }
+        checkIdNullOrEmpty(id);
 
-        return null;
+        return albumRepository.findById(id).orElseThrow(() -> new AlbumNotFoundException(ALBUM_NOT_FOUND));
     }
 
     @Transactional
     public AlbumResponse saveAlbum(String id) {
-        String token = loginService.loginSpotify();
-        AlbumSpotify albumResponse = albumClient.getAlbum(BEARER + token, id);
+        checkIdNullOrEmpty(id);
 
-        String artistId = albumResponse.artists().get(0).getId();
-        Artist artist = artistService.findArtistById(artistId);
+        try {
+            String token = loginService.loginSpotify();
+            AlbumSpotify albumResponse = albumClient.getAlbum(BEARER + token, id).get();
+            String artistId = albumResponse.artists().get(0).getId();
+            Artist artist = artistService.findArtistById(artistId);
 
-        if (artist == null) {
-            artist = ArtistMapper.fromResponseToArtist(artistService.saveArtist(artistId, "BR"), artistId);
+            if (artist == null) {
+                artist = ArtistMapper.fromResponseToArtist(artistService.saveArtist(artistId, "BR"), artistId);
+            }
+
+            List<String> albumTracksName = getAlbumTracksName(id, token);
+
+            var newAlbum = new Album(
+                    albumResponse.id(), albumResponse.name(), albumResponse.releaseDate(), albumResponse.albumType(),
+                    albumResponse.label(), albumResponse.genres(), artist.getName(), albumTracksName, artist);
+
+            albumRepository.save(newAlbum);
+            artistService.addNewAlbum(artist.getId(), newAlbum);
+
+            return AlbumMapper.fromAlbumToResponse(newAlbum);
+        } catch (FeignException.BadRequest ex) {
+            throw new BadFormatIdException("Badly formatted Id!");
+        } catch (FeignException ex) {
+            throw new AlbumNotFoundException(ALBUM_NOT_FOUND);
         }
+    }
 
-        List<String> albumTracksName = albumResponse.tracks().items().stream()
+    private List<String> getAlbumTracksName(String id, String token) {
+        AlbumSpotify albumResponse = albumClient.getAlbum(BEARER + token, id).get();
+
+        return albumResponse.tracks().items().stream()
                 .map(Track::getName)
                 .collect(Collectors.toList());
+    }
 
-        var newAlbum = new Album(
-                albumResponse.id(), albumResponse.name(), albumResponse.releaseDate(), albumResponse.albumType(),
-                albumResponse.label(), albumResponse.genres(), artist.getName(), albumTracksName, artist);
-
-        albumRepository.save(newAlbum);
-        artistService.addNewAlbum(artist.getId(), newAlbum);
-
-        return AlbumMapper.fromAlbumToResponse(newAlbum);
+    private void checkIdNullOrEmpty(String id) {
+        if (id == null || id.isEmpty()) {
+            throw new NullIdException("Id cannot be null!");
+        }
     }
 }

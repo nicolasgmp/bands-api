@@ -16,11 +16,15 @@ import br.com.nicolas.bandsapi.models.Album;
 import br.com.nicolas.bandsapi.models.Artist;
 import br.com.nicolas.bandsapi.models.Track;
 import br.com.nicolas.bandsapi.repositories.ArtistRepository;
+import br.com.nicolas.bandsapi.services.exceptions.ArtistNotFoundException;
+import br.com.nicolas.bandsapi.services.exceptions.NullIdException;
+import feign.FeignException;
 import jakarta.transaction.Transactional;
 
 @Service
 public class ArtistService {
 
+    private static final String ARTIST_NOT_FOUND = "Artist not found!";
     private static final String BEARER = "Bearer ";
     private final ArtistClient artistClient;
     private final LoginService loginService;
@@ -33,38 +37,52 @@ public class ArtistService {
     }
 
     public ArtistResponse findArtistSpotify(String id) {
-        String token = loginService.loginSpotify();
-        ArtistSpotify artistSpotify = artistClient.getArtist(BEARER + token, id);
-        List<String> artistAlbumsName = getArtistAlbumsName(id, token);
-        List<String> artistTopTracks = getArtistTopTracks(id, "BR", token);
+        checkIdNullOrEmpty(id);
 
-        return ArtistMapper.fromSpotifyToResponse(artistSpotify, artistAlbumsName, artistTopTracks);
+        try {
+            String token = loginService.loginSpotify();
+            ArtistSpotify artistSpotify = artistClient.getArtist(BEARER + token, id);
+            List<String> artistAlbumsName = getArtistAlbumsName(id, token);
+            List<String> artistTopTracks = getArtistTopTracks(id, "BR", token);
+
+            return ArtistMapper.fromSpotifyToResponse(artistSpotify, artistAlbumsName, artistTopTracks);
+        } catch (FeignException ex) {
+            throw new ArtistNotFoundException(ARTIST_NOT_FOUND);
+        }
     }
 
     public Artist findArtistById(String id) {
-        if (id != null) {
-            return artistRepository.findById(id).orElse(null);
-        }
+        checkIdNullOrEmpty(id);
 
-        return null;
+        try {
+            return artistRepository.findById(id).orElse(null);
+        } catch (ArtistNotFoundException ex) {
+            throw new ArtistNotFoundException(ARTIST_NOT_FOUND);
+        }
     }
 
     @Transactional
     public ArtistResponse saveArtist(String id, String market) {
-        String token = loginService.loginSpotify();
+        checkIdNullOrEmpty(id);
 
-        ArtistSpotify artistResponse = artistClient.getArtist(BEARER + token, id);
-        List<String> artistAlbumsName = getArtistAlbumsName(id, token);
-        List<String> artistTopTracks = getArtistTopTracks(id, market, token);
+        try {
+            String token = loginService.loginSpotify();
 
-        Artist newArtist = new Artist(
-                artistResponse.id(), artistResponse.name(), artistResponse.followers().total(),
-                artistResponse.popularity(), artistResponse.genres(), artistAlbumsName,
-                artistTopTracks, Collections.emptyList());
+            ArtistSpotify artistResponse = artistClient.getArtist(BEARER + token, id);
+            List<String> artistAlbumsName = getArtistAlbumsName(id, token);
+            List<String> artistTopTracks = getArtistTopTracks(id, market, token);
 
-        artistRepository.save(newArtist);
+            Artist newArtist = new Artist(
+                    artistResponse.id(), artistResponse.name(), artistResponse.followers().total(),
+                    artistResponse.popularity(), artistResponse.genres(), artistAlbumsName,
+                    artistTopTracks, Collections.emptyList());
 
-        return ArtistMapper.fromArtistToResponse(newArtist);
+            artistRepository.save(newArtist);
+
+            return ArtistMapper.fromArtistToResponse(newArtist);
+        } catch (FeignException ex) {
+            throw new ArtistNotFoundException(ARTIST_NOT_FOUND);
+        }
     }
 
     @Transactional
@@ -76,7 +94,7 @@ public class ArtistService {
         return ArtistMapper.fromArtistToResponse(artist);
     }
 
-    public List<String> getArtistAlbumsName(String id, String token) {
+    private List<String> getArtistAlbumsName(String id, String token) {
         ArtistAlbumsResponse artistAlbumsResponse = artistClient.getArtistAlbums(BEARER + token, id);
 
         return artistAlbumsResponse.items().stream()
@@ -84,11 +102,17 @@ public class ArtistService {
                 .collect(Collectors.toList());
     }
 
-    public List<String> getArtistTopTracks(String id, String market, String token) {
+    private List<String> getArtistTopTracks(String id, String market, String token) {
         TopTracksResponse topTracksResponse = artistClient.getArtistTopTracks(BEARER + token, id, market);
 
         return topTracksResponse.tracks().stream()
                 .map(Track::getName)
                 .collect(Collectors.toList());
+    }
+
+    private void checkIdNullOrEmpty(String id) {
+        if (id == null || id.isEmpty()) {
+            throw new NullIdException("Id cannot be null");
+        }
     }
 }

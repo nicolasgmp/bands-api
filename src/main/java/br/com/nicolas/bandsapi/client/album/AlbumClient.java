@@ -1,5 +1,7 @@
 package br.com.nicolas.bandsapi.client.album;
 
+import java.util.Optional;
+
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -12,9 +14,10 @@ import br.com.nicolas.bandsapi.client.album.dto.AlbumTracksResponse;
 public interface AlbumClient {
 
     @GetMapping(value = "/v1/albums/{id}")
-    AlbumSpotify getAlbum(@RequestHeader("Authorization") String authorization, @PathVariable String id);
+    Optional<AlbumSpotify> getAlbum(@RequestHeader("Authorization") String authorization, @PathVariable String id);
 
     @GetMapping(value = "/v1/albums/{id}/tracks")
-    AlbumTracksResponse getAlbumTracks(@RequestHeader("Authorization") String authorization, @PathVariable String id);
+    Optional<AlbumTracksResponse> getAlbumTracks(@RequestHeader("Authorization") String authorization,
+            @PathVariable String id);
 
 }
